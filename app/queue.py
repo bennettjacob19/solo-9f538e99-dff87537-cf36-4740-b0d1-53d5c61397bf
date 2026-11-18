@@ -117,7 +117,14 @@ def claim_pending(r: redis.Redis, consumer: str,
     out: list[tuple[str, dict]] = []
     for item in resp[1]:
         sid, fields = item
-        if isinstance(fields, (list, tuple)):
+        if fields is None:
+            # The PEL still references an entry that no longer exists in the
+            # stream (XDEL/trim). There is no job payload to recover; hand an
+            # empty mapping to the worker so it ACKs and drops the entry
+            # instead of crashing on it forever. The artifact row itself is
+            # re-dispatched by the reconciler (stale binding / orphan scan).
+            fields = {}
+        elif isinstance(fields, (list, tuple)):
             fields = dict(zip(fields[0::2], fields[1::2]))
         out.append((sid, fields))
     return out
@@ -155,6 +162,65 @@ def pending_entry_ids(r: redis.Redis) -> set[str]:
         # Next page starts strictly after the last returned message id.
         start = "(" + resp[-1]["message_id"]
     return ids
+
+
+def _stream_id_key(stream_id: str) -> tuple[int, int]:
+    """Orderable form of a Redis stream id (``ms-seq``).
+
+    Lexicographic comparison is wrong once the millisecond part grows a
+    digit (``"999-0" > "1000-0"`` as strings), so parse both halves.
+    """
+    ms, _, seq = stream_id.partition("-")
+    return int(ms or 0), int(seq or 0)
+
+
+def stream_id_lte(a: str, b: str) -> bool:
+    return _stream_id_key(a) <= _stream_id_key(b)
+
+
+def group_pel_snapshot(r: redis.Redis) -> Optional[tuple[set[str], str]]:
+    """Return ``(pel_ids, last_delivered_id)`` for the consumer group.
+
+    ``None`` means the group does not exist yet (fresh Redis / Redis was
+    wiped); the caller must skip classifying bindings rather than assume all
+    of them are stale.
+
+    The watermark is read *before* the PEL. That ordering makes the snapshot
+    conservative:
+
+      * a message delivered between the two calls shows up in the PEL, so it
+        is treated as live;
+      * a message delivered and even ACKed between the two calls has an id
+        above the watermark, so it is not declared stale this round; the next
+        scan sees the advanced watermark and repairs it then.
+
+    A message that is absent from the PEL and at/below the watermark was
+    already delivered to some consumer and then ACKed (worker finish or the
+    read-failure retry path), i.e. it will never be delivered again.
+    """
+    try:
+        groups = r.xinfo_groups(config.STREAM_KEY)
+    except redis.ResponseError as exc:
+        if "NOGROUP" in str(exc) or "no such key" in str(exc).lower():
+            return None
+        raise
+    for group in groups:
+        if group.get("name") == config.GROUP_NAME:
+            watermark = str(group.get("last-delivered-id") or "0-0")
+            return pending_entry_ids(r), watermark
+    return None
+
+
+def message_exists(r: redis.Redis, stream_id: str) -> bool:
+    """Whether the stream still physically contains this exact entry.
+
+    An ACK only removes the entry from the PEL; the entry stays in the stream
+    (and so does a binding that was never delivered). If Redis lost its data
+    (or the entry was XDELed/trimmed), even that trace is gone and a bound
+    pending row is definitely undeliverable.
+    """
+    return bool(r.xrange(config.STREAM_KEY, min=stream_id, max=stream_id,
+                         count=1))
 
 
 def parse_artifact_id(fields: dict) -> Optional[str]:

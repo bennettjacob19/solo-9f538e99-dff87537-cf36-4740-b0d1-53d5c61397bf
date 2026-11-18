@@ -30,9 +30,17 @@
    会让行退回 `pending` 并做指数退避重试（保留错误信息），ACK 旧消息后才解绑
    stream 绑定，保证同一作业任何时刻至多一条在途消息；只有成功读取且摘要不同
    才写 `failed`。
+   - **ACK 后、解绑前崩溃可自愈。** 该窗口会留下“pending + 绑定着一条已确认、
+     不可能再投递的消息”的记录。reconciler 每轮扫描这种带绑定的 pending 行，
+     判断其消息是否仍可能投递（仍在 PEL 中，或尚未被投递过且确实存在于 stream
+     中）；否则用条件 UPDATE `WHERE status='pending' AND stream_id=旧值` 解绑，
+     下一拍由正常派发路径重新入队。恢复流程完全可重入：多个 web 副本并发扫描
+     同一行时只有一个能赢得解绑并派发，其余空转，不会产生第二条有效任务；
+     已 passed/failed 的行不满足条件，永远不会被改回 pending。
 5. **重启保持状态与下载资格。** 结论存于 SQLite（WAL 模式，持久卷），
    Redis 开启 AOF。即使 Redis 数据丢失，reconciler 也会扫描卡在
-   `processing` 且 PEL 中已无对应消息的行，重置为 pending 重新派发。
+   `processing` 且 PEL 中已无对应消息的行，重置为 pending 重新派发；
+   pending 行上的失效绑定同样会被修复（见第 4 条）。
 6. **下载资格只看数据库确认状态**，不依赖内存或队列状态。
 
 ## 目录结构
@@ -43,13 +51,14 @@ app/
   db.py           SQLite 模式与全部条件状态迁移（幂等核心）
   queue.py        Redis Streams：组、XADD、XREADGROUP、XAUTOCLAIM、XACK
   checksums.py    SHA-256 流式计算与格式校验
-  reconciler.py   web 内线程：补发入队失败的任务 + 回收孤儿 processing 行
+  reconciler.py   web 内线程：补发入队失败的任务 + 修复失效绑定 + 回收孤儿 processing 行
   worker.py       校验 worker 进程
   web.py          Flask 页面、上传、下载（waitress 承载 WSGI）
   templates/      单页界面
 tests/
-  e2e_test.py        14 项端到端场景（见下）
-  orphan_reap_test.py Redis 数据丢失后的孤儿回收专项
+  e2e_test.py          14 项端到端场景（见下）
+  orphan_reap_test.py  Redis 数据丢失后的孤儿回收专项
+  recovery_test.py     ACK/解绑崩溃窗口的恢复与并发安全回归（见下）
 ```
 
 ## docker compose 启动
@@ -73,6 +82,7 @@ docker compose up --build
 | `DISPATCH_INTERVAL_SECONDS` | `2` | reconciler 轮询间隔 |
 | `SIMULATE_READ_FAILURE` | 未设置 | 设为 `1` 时 worker 模拟文件读取失败（测试用） |
 | `PRE_FINALIZE_DELAY_MS` | `0` | 结论写入前延时（测试 kill 窗口用） |
+| `EXIT_AFTER_ACK_BEFORE_DETACH` | 未设置 | 设为 `1` 时 worker 在读失败重试 ACK 后、解绑前立即退出（测试崩溃窗口用） |
 
 ## 本地（无 Docker）验证
 
@@ -84,6 +94,7 @@ python3 -m venv --without-pip .venv        # 本机若缺 pip 先 bootstrap
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python tests/e2e_test.py
 .venv/bin/python tests/orphan_reap_test.py
+.venv/bin/python tests/recovery_test.py
 ```
 
 `tests/e2e_test.py` 的 14 项检查：
@@ -97,6 +108,20 @@ python3 -m venv --without-pip .venv        # 本机若缺 pip 先 bootstrap
 - T7 手工重投同一消息，已确认行零变化（updated_at 不变、无重复行）
 - T8 web/worker/redis 全部重启后状态与下载资格保持
 - T9 稳态下消费组 PEL 为空（无悬挂消息）
+
+`tests/recovery_test.py` 专测 ACK 后、解绑前崩溃的窗口（15 项）：
+
+- U1 并发解绑只有一个赢家，行最终 pending 且无绑定
+- U2 已 passed/failed 的行不会被恢复扫描改回 pending
+- U3 解绑只匹配“状态 pending + 完全相同的旧绑定”
+- U4 扫描分类：PEL 中/尚未投递且存在的绑定保留；已确认或已消失的绑定解绑
+- U5 消费组尚不存在时延后处理，不盲判
+- U6 并发派发只有一个消息绑定成功
+- U7 与行绑定不一致的消息无法认领该行
+- E1 真实进程在 ACK→解绑窗口退出；reconciler 修复后任务只重跑一次并 passed
+- E2 已确认结果在后续扫描中零变化（updated_at/attempts 均不变）
+- E3 两个 web 副本同时扫描同一坏行，仍只产生一次重试与一份结论
+- E4 稳态 PEL 为空
 
 ## 已知限制 / 遗留项
 

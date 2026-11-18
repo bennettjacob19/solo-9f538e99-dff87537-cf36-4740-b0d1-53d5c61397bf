@@ -1,6 +1,0 @@
-2026-11-18 12:52:39,030 INFO queue: consumer group verifiers already exists
-2026-11-18 12:52:39,030 INFO worker: worker worker-2 joined group verifiers on verify:jobs
-2026-11-18 12:52:42,405 INFO worker: worker worker-2 processing artifact 9e6a492080044271af0b89753df27a49 (msg 1795006362404-0, attempt 1)
-2026-11-18 12:52:42,405 INFO worker: artifact 9e6a492080044271af0b89753df27a49 FAILED digest check
-2026-11-18 12:52:43,486 INFO worker: shutdown signal received
-2026-11-18 12:52:44,407 INFO worker: worker worker-2 exited

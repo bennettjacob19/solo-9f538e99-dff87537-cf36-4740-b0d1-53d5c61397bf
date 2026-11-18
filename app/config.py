@@ -40,6 +40,13 @@ PRE_FINALIZE_DELAY = _int("PRE_FINALIZE_DELAY_MS", 0)
 # Test hook: pretend the stored file is unreadable when set to "1".
 SIMULATE_READ_FAILURE = os.environ.get("SIMULATE_READ_FAILURE", "") == "1"
 
+# Test hook: after a read-failure retry commits ``pending`` and ACKs the old
+# message, exit immediately *before* clearing the stream binding. This is the
+# exact crash window the reconciler's stale-binding repair must recover from.
+EXIT_AFTER_ACK_BEFORE_DETACH = (
+    os.environ.get("EXIT_AFTER_ACK_BEFORE_DETACH", "") == "1"
+)
+
 
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)

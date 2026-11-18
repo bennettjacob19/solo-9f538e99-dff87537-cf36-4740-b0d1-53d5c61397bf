@@ -1,7 +1,0 @@
-2026-11-18 12:52:49,632 INFO queue: consumer group verifiers already exists
-2026-11-18 12:52:49,632 INFO worker: worker worker-1 joined group verifiers on verify:jobs
-2026-11-18 12:52:53,704 INFO worker: claimed pending message 1795006369415-0
-2026-11-18 12:52:53,704 INFO worker: worker worker-1 took over artifact 9dc4015f5d3749fb8f92ec5904882697 (msg 1795006369415-0, attempt 4)
-2026-11-18 12:52:53,705 INFO worker: artifact 9dc4015f5d3749fb8f92ec5904882697 PASSED
-2026-11-18 12:52:54,062 INFO worker: shutdown signal received
-2026-11-18 12:52:55,717 INFO worker: worker worker-1 exited

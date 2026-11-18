@@ -1,8 +1,0 @@
-2026-11-18 12:52:58,862 INFO queue: consumer group verifiers already exists
-2026-11-18 12:52:58,862 INFO worker: worker worker-2 joined group verifiers on verify:jobs
-2026-11-18 12:53:02,981 INFO worker: claimed pending message 1795006378435-0
-2026-11-18 12:53:02,981 INFO worker: worker worker-2 took over artifact 2dce061e93024cbfa463068cb1ddb02a (msg 1795006378435-0, attempt 2)
-2026-11-18 12:53:02,982 INFO worker: artifact 2dce061e93024cbfa463068cb1ddb02a PASSED
-2026-11-18 12:53:03,285 INFO worker: artifact 9604cf4264944f26b2d8426ae8290c24 not eligible (takeover=False); ACK 1795006383284-0
-2026-11-18 12:53:09,301 INFO worker: shutdown signal received
-2026-11-18 12:53:09,405 INFO worker: worker worker-2 exited

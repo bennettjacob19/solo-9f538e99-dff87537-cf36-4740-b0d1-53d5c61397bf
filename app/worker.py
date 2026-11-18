@@ -59,7 +59,8 @@ class VerificationWorker:
             row = db.takeover_for_processing(
                 artifact_id, self.worker_id, stream_id)
         else:
-            row = db.claim_for_processing(artifact_id, self.worker_id)
+            row = db.claim_for_processing(
+                artifact_id, self.worker_id, stream_id)
         if row is None:
             # Duplicate delivery / takeover of an already decided job or a
             # superseded message. The conditional claim found no eligible row,
@@ -90,10 +91,25 @@ class VerificationWorker:
             # Read failure -> retry, NOT a digest mismatch. Commit the
             # pending+backoff state first, ACK the old message, then unbind so
             # the reconciler publishes exactly one fresh retry message.
+            #
+            # Crash windows, both recovered by the reconciler's stale-binding
+            # repair (app/reconciler.py::_reap_stale_bindings):
+            #   * before the ACK  -> message still in the PEL; the row is
+            #     pending and bound to it, and takeover accepts it because
+            #     the binding matches.
+            #   * after the ACK, before the detach -> the binding points at a
+            #     message that is already delivered+ACKed, so it is
+            #     undeliverable; the reconciler unbinds the row and the
+            #     dispatcher publishes a fresh retry message.
             log.warning("read failure for %s: %s (will retry)",
                         artifact_id, exc)
             db.record_read_failure(artifact_id, self.worker_id, str(exc))
             queue.ack(self._r, stream_id)
+            if config.EXIT_AFTER_ACK_BEFORE_DETACH:
+                # Test hook: die inside the crash window.
+                log.error("EXIT_AFTER_ACK_BEFORE_DETACH: exiting before "
+                          "clearing binding of %s", artifact_id)
+                os._exit(1)
             db.detach_after_ack(artifact_id, stream_id)
             return
 

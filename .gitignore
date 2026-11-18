@@ -7,5 +7,6 @@ data/
 *.db-shm
 tests/runtime/
 tests/runtime-orphan/
+tests/runtime-recovery/
 .idea/
 .vscode/

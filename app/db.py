@@ -144,6 +144,67 @@ def fetch_due_pending(limit: int = 100) -> list[sqlite3.Row]:
     ))
 
 
+def fetch_bound_pending(limit: int = 200) -> list[sqlite3.Row]:
+    """Pending rows that still carry a stream binding.
+
+    Normally such a row is either freshly dispatched (message not delivered
+    yet) or in the read-failure retry window (row already committed as pending
+    while the worker ACKs the old message). The reconciler inspects the
+    Redis side to tell valid bindings from stale ones; the query deliberately
+    does not use ``next_enqueue_at`` so a stale binding is repaired even while
+    a retry backoff is still running.
+    """
+    init_db()
+    conn = get_conn()
+    return list(conn.execute(
+        """
+        SELECT id, stream_id, next_enqueue_at, updated_at FROM artifacts
+        WHERE status = ? AND stream_id IS NOT NULL
+        ORDER BY updated_at
+        LIMIT ?
+        """,
+        (ST_PENDING, limit),
+    ))
+
+
+def clear_stale_binding(artifact_id: str, stream_id: str) -> bool:
+    """Atomically unbind a *pending* row from a stream message that is known
+    to be undeliverable (already ACKed, deleted, or lost with Redis).
+
+    This is the re-entrant repair for the read-failure crash window: the
+    worker commits ``pending`` first, then ACKs, then detaches; a crash
+    between ACK and detach leaves ``stream_id`` pointing at a message that no
+    longer exists in the PEL, so the dispatcher (which only picks unbound
+    rows) would never see it again.
+
+    Concurrency contract: the UPDATE is conditional on both the current
+    status (``pending``) and the exact stale binding. SQLite serialises the
+    writers, so when several reconcilers scan the same orphan at once exactly
+    one of them gets ``True`` and is allowed to publish; the others do
+    nothing. A row that was concurrently claimed/confirmed never matches and
+    cannot be reverted to pending. A row that was already re-bound to a newer
+    message does not match either, so its live binding is never cleared.
+    """
+    init_db()
+    conn = get_conn()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            """
+            UPDATE artifacts
+            SET stream_id = NULL, updated_at = ?
+            WHERE id = ? AND status = ? AND stream_id = ?
+            """,
+            (time.time(), artifact_id, ST_PENDING, stream_id),
+        )
+        changed = cur.rowcount == 1
+        conn.execute("COMMIT")
+        return changed
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
 def attach_stream_id(artifact_id: str, stream_id: str) -> bool:
     """Atomically bind a freshly produced stream message to one pending row.
 
@@ -221,12 +282,21 @@ def reset_stuck_processing(ids: Iterable[str]) -> int:
     return cur.rowcount
 
 
-def claim_for_processing(artifact_id: str, worker_id: str) -> Optional[sqlite3.Row]:
+def claim_for_processing(artifact_id: str, worker_id: str,
+                         stream_id: Optional[str] = None
+                         ) -> Optional[sqlite3.Row]:
     """Worker: move one row to ``processing`` iff it is still ``pending``.
 
     This is the first idempotency gate: a redelivered message for a row that
     another worker already claimed (or that already has a conclusion) simply
     returns None and the message gets ACKed as a harmless duplicate.
+
+    When ``stream_id`` is given, the claim is also rejected if the row is
+    bound to a *different* message. That happens when two dispatchers raced
+    (one binding won, the loser's message was supposed to be deleted but may
+    already have been delivered) — accepting both would run the job twice.
+    An unbound row is still accepted, because a worker can legitimately read
+    the message in the instant between XADD and the binding UPDATE.
     """
     conn = get_conn()
     conn.execute("BEGIN IMMEDIATE")
@@ -235,6 +305,10 @@ def claim_for_processing(artifact_id: str, worker_id: str) -> Optional[sqlite3.R
             "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
         ).fetchone()
         if row is None or row["status"] != ST_PENDING:
+            conn.execute("COMMIT")
+            return None
+        if (stream_id is not None and row["stream_id"] is not None
+                and row["stream_id"] != stream_id):
             conn.execute("COMMIT")
             return None
         now = time.time()
@@ -356,7 +430,10 @@ def record_read_failure(artifact_id: str, worker_id: str, error: str) -> bool:
     The stream binding is kept until the worker ACKs the old message (see
     :func:`detach_after_ack`); this ordering guarantees there is never a
     window where both the old PEL entry and a freshly published retry message
-    exist for the same job.
+    exist for the same job. If the process dies between ACK and detach, the
+    binding is left pointing at an already-delivered message; the reconciler
+    treats that as undeliverable and repairs it (see
+    :func:`clear_stale_binding` and :func:`fetch_bound_pending`).
     """
     conn = get_conn()
     conn.execute("BEGIN IMMEDIATE")
