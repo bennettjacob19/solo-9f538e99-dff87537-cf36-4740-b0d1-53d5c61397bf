@@ -1,0 +1,5 @@
+2026-11-18 12:53:23,251 INFO worker: worker w2 joined group verifiers on verify:jobs
+2026-11-18 12:53:28,058 INFO worker: worker w2 processing artifact f9ae7aaf87f74c97a951d916bbaeaeda (msg 1795006408056-0, attempt 2)
+2026-11-18 12:53:28,059 INFO worker: artifact f9ae7aaf87f74c97a951d916bbaeaeda PASSED
+2026-11-18 12:53:28,147 INFO worker: shutdown signal received
+2026-11-18 12:53:30,083 INFO worker: worker w2 exited

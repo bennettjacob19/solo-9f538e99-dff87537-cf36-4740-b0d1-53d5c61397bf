@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    # AOF keeps stream/group state across redis restarts; even without it the
+    # web reconciler re-dispatches any row whose stream message vanished.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync",
+              "everysec"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    image: verify-platform:latest
+    command: ["app.web"]
+    environment:
+      REDIS_HOST: redis
+      DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      - app-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: verify-platform:latest
+    build: .
+    command: ["app.worker"]
+    environment:
+      REDIS_HOST: redis
+      DATA_DIR: /data
+    volumes:
+      - app-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Two independent replicas = two consumers in the "verifiers" group.
+    # Modern Compose v2 supports `deploy.replicas` for `docker compose up`.
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  app-data:

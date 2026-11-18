@@ -1,0 +1,12 @@
+2026-11-18 12:53:22,036 INFO reconciler: reconciler started
+2026-11-18 12:53:22,049 INFO waitress: Serving on http://0.0.0.0:8101
+2026-11-18 12:53:22,197 INFO web: accepted upload a7ca968f1154444eac792822a062c516 (o.bin), pending verification
+2026-11-18 12:53:23,049 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:23,050 INFO reconciler: dispatched artifact f9ae7aaf87f74c97a951d916bbaeaeda -> 1795006403049-0
+2026-11-18 12:53:24,051 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:25,053 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:26,054 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:27,054 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:27,055 WARNING reconciler: re-dispatched 1 orphaned processing rows: ['f9ae7aaf87f74c97a951d916bbaeaeda']
+2026-11-18 12:53:28,056 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:28,057 INFO reconciler: dispatched artifact f9ae7aaf87f74c97a951d916bbaeaeda -> 1795006408056-0

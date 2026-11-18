@@ -1,0 +1,3 @@
+2026-11-18 12:53:22,259 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:22,259 INFO worker: worker w1 joined group verifiers on verify:jobs
+2026-11-18 12:53:23,051 INFO worker: worker w1 processing artifact f9ae7aaf87f74c97a951d916bbaeaeda (msg 1795006403049-0, attempt 1)

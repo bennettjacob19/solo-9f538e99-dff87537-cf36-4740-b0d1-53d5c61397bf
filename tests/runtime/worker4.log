@@ -1,0 +1,4 @@
+2026-11-18 12:53:11,123 INFO queue: consumer group verifiers already exists
+2026-11-18 12:53:11,123 INFO worker: worker worker-4 joined group verifiers on verify:jobs
+2026-11-18 12:53:19,271 INFO worker: shutdown signal received
+2026-11-18 12:53:21,188 INFO worker: worker worker-4 exited

@@ -1,0 +1,6 @@
+2026-11-18 12:52:44,637 INFO queue: consumer group verifiers already exists
+2026-11-18 12:52:44,637 INFO worker: worker worker-1 joined group verifiers on verify:jobs
+2026-11-18 12:52:45,409 INFO worker: worker worker-1 processing artifact 9dc4015f5d3749fb8f92ec5904882697 (msg 1795006365408-0, attempt 1)
+2026-11-18 12:52:45,409 WARNING worker: read failure for 9dc4015f5d3749fb8f92ec5904882697: SIMULATE_READ_FAILURE is set (will retry)
+2026-11-18 12:52:45,517 INFO worker: shutdown signal received
+2026-11-18 12:52:47,412 INFO worker: worker worker-1 exited
